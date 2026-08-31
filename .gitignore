@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+
+# Pytest
+.pytest_cache/
+
+# VS Code
+.vscode/
+
+# Generated outputs
+PHASE_1/outputs/
+PHASE_2/outputs/
+PHASE_2/dashboard_summary.csv
+
+# Ignore ALL data
+data/
