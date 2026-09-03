@@ -1,8 +1,15 @@
-#                    SP7
+#                    SP7 AND DE3
 
 
 # This code has created the files saved at: C:\Users\shirish.shyam\Desktop\Shirish_1\data\processed\training_run
 # Created files: clean_activity.parquet, hourly_summary.parquet, dashboard_summary.csv
+
+# DE8 Q8 These are already implemented 
+# Expected Action: REJECT
+# Expected Action: QUARANTINE
+# Expected Action: WARN
+# Expected Action: FAIL
+
 
 """Telecom ETL pipeline job contract.
 
@@ -51,7 +58,7 @@ REQUIRED_INPUT_COLUMNS = {
 
 METRIC_COLUMNS = ["sms_in", "sms_out", "call_in", "call_out", "internet_activity"]
 
-
+# DE3  Configure telecom_pipeline.py to read data/raw/ and write data/processed/ and data/analytics/. 
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for input, output and reference paths."""
     parser = argparse.ArgumentParser(description="Read raw telecom events, clean and aggregate them, then enrich with grid reference data.")
@@ -68,16 +75,87 @@ def read_raw(input_path: Path) -> pd.DataFrame:
         raise FileNotFoundError(f"Input directory does not exist: {input_path}")
 
     file_paths = sorted(input_path.glob("sms-call-internet-mi-*.csv"))
+
+    # DE8 2. Test a duplicate file and a duplicate ingestion attempt.
+
+    processed_log = Path("logs/processed_files.json")
+
+    if processed_log.exists():
+
+        with open(
+            processed_log,
+            "r",    
+            encoding="utf-8"
+        ) as file:
+
+            processed_files = json.load(file)
+
+    else:
+
+        processed_files = []
+
+    for path in file_paths:
+
+        if path.name in processed_files:
+
+            raise ValueError(
+                f"Duplicate ingestion attempt: {path.name}"
+            )
+
+    
+# DE3  5. Test the empty-input path and the Spark-failure path.
     if not file_paths:
         raise FileNotFoundError(f"No input files found in {input_path}. Expected files matching 'sms-call-internet-mi-*.csv'.")
 
-    frames = [pd.read_csv(path) for path in file_paths]
+    # DE8 6. Test a partially corrupt file.
+    # Expected Action: QUARANTINE
+
+    frames = [
+
+        pd.read_csv(
+            path,
+            on_bad_lines="skip"
+        )
+
+        for path in file_paths
+    ]
     raw = pd.concat(frames, ignore_index=True)
     logger.info("Input rows loaded: %s", len(raw))
 
-    missing_columns = sorted(REQUIRED_INPUT_COLUMNS - set(raw.columns))
+    # DE8 5. Test an unexpected or missing column.
+    # Expected Action: REJECT
+
+    missing_columns = sorted(
+        REQUIRED_INPUT_COLUMNS - set(raw.columns)
+    )
+
     if missing_columns:
-        raise ValueError(f"Missing required input columns: {missing_columns}")
+        raise ValueError(
+            f"Missing required input columns: {missing_columns}"
+        )
+
+    for path in file_paths:
+
+        if path.name not in processed_files:
+
+            processed_files.append(path.name)
+
+    processed_log.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    with open(
+        processed_log,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            processed_files,
+            file,
+            indent=4
+        )
 
     return raw
 
@@ -106,12 +184,47 @@ def clean(raw_df: pd.DataFrame) -> pd.DataFrame:
     for column in METRIC_COLUMNS:
         renamed[column] = pd.to_numeric(renamed[column], errors="coerce")
 
-    null_before_fill = int(renamed[METRIC_COLUMNS].isna().sum().sum())
+    # DE8 4. Test negative activity values.
+    # Expected Action: WARN
+
+    for column in METRIC_COLUMNS:
+
+        negative_count = int(
+            (renamed[column] < 0).sum()
+        )
+
+        if negative_count > 0:
+
+            logger.warning(
+                "Negative values detected in %s: %s",
+                column,
+                negative_count
+            )
+
+    null_before_fill = int(
+        renamed[METRIC_COLUMNS].isna().sum().sum()
+    )
+
     for column in METRIC_COLUMNS:
         renamed[column] = renamed[column].fillna(0.0)
 
-    invalid_timestamp_count = int(renamed["timestamp"].isna().sum())
-    invalid_grid_count = int(renamed["grid_id"].isna().sum())
+    # DE8 3. Test malformed timestamps.
+    # Expected Action: QUARANTINE
+
+    invalid_timestamp_count = int(
+        renamed["timestamp"].isna().sum()
+    )
+
+    if invalid_timestamp_count > 0:
+
+        logger.warning(
+            "Malformed timestamps detected: %s",
+            invalid_timestamp_count
+        )
+
+    invalid_grid_count = int(
+        renamed["grid_id"].isna().sum()
+    )
 
     cleaned = renamed.dropna(subset=["timestamp", "grid_id"]).copy()
     cleaned = cleaned[["timestamp", "grid_id", "country_code", *METRIC_COLUMNS]].copy()
@@ -144,6 +257,10 @@ def aggregate(cleaned_df: pd.DataFrame) -> pd.DataFrame:
 def enrich(aggregated_df: pd.DataFrame, reference_path: Path) -> pd.DataFrame:
     """Join grid metrics with the GeoJSON reference so each grid has geometry metadata."""
     logger.info("Starting enrich stage with reference: %s", reference_path)
+    #DE3 Question 5 continuation
+
+    # DE8 7. Simulate a Spark job failure.
+    # Expected Action: FAIL
     if not reference_path.exists():
         raise FileNotFoundError(f"Reference GeoJSON does not exist: {reference_path}")
 
@@ -166,15 +283,21 @@ def enrich(aggregated_df: pd.DataFrame, reference_path: Path) -> pd.DataFrame:
     logger.info("Missing geometry rows: %s", missing_geometry)
     return enriched
 
-
+# DE3  6. Confirm analytics files are produced only after successful ingestion.
 def write_outputs(enriched_df: pd.DataFrame, output_path: Path) -> dict[str, Path]:
     """Persist cleaned, aggregate and dashboard outputs to the requested output directory."""
     logger.info("Starting write_outputs to: %s", output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    clean_path = output_path / "clean_activity.parquet"
-    aggregate_path = output_path / "hourly_summary.parquet"
-    dashboard_path = output_path / "dashboard_summary.csv"
+    processed_path = output_path / "processed"
+    analytics_path = output_path / "analytics"
+
+    processed_path.mkdir(parents=True, exist_ok=True)
+    analytics_path.mkdir(parents=True, exist_ok=True)
+
+    clean_path = processed_path / "clean_activity.parquet"
+    aggregate_path = processed_path / "hourly_summary.parquet"
+    dashboard_path = analytics_path / "dashboard_summary.csv"
 
     clean_table = enriched_df[["timestamp", "grid_id", "date", *METRIC_COLUMNS, "total_activity"]].copy()
     aggregate_table = enriched_df[["timestamp", "date", "grid_id", *METRIC_COLUMNS, "total_activity"]].copy()
@@ -205,7 +328,7 @@ def write_outputs(enriched_df: pd.DataFrame, output_path: Path) -> dict[str, Pat
         "dashboard_summary": dashboard_path,
     }
 
-
+# DE3  4. Log Spark job start, end and status.
 def main() -> None:
     """Run the full telecom ETL pipeline."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
