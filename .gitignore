@@ -1,20 +1,62 @@
-# Python
+# Python bytecode and caches
 __pycache__/
-*.pyc
-
-# Virtual environment
-.venv/
-
-# Pytest
+*.py[cod]
+*.pyo
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 
-# VS Code
+# Virtual environments and package metadata
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Generated model, report, and pipeline outputs
+**/outputs/
+**/*.joblib
+**/*.mlmodel
+**/*.model
+**/*.pkl
+**/*.csv
+
+# Runtime logs and operational metadata
+logs/
+*.log
+*.log.*
+
+# Frontend dependencies and build artifacts
+PHASE_5/frontend/node_modules/
+PHASE_5/frontend/dist/
+PHASE_5/frontend/.vite/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+
+# IDE, editor, and operating-system files
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
 
-# Generated outputs
-PHASE_1/outputs/
-PHASE_2/outputs/
-PHASE_2/dashboard_summary.csv
+# Test and tooling cache
+.ipynb_checkpoints/
+.nox/
+.tox/
 
-# Ignore ALL data
+# Data files and local datasets
 data/
+
+# Ensure generated project summaries stay out of source control
+PHASE_2/dashboard_summary.csv

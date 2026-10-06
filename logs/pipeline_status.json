@@ -1,7 +1,0 @@
-{
-    "pipeline": "telecom_end_to_end",
-    "timestamp": "2026-09-01T22:34:04.937942",
-    "status": "SUCCESS",
-    "processed_exists": true,
-    "warehouse_exists": true
-}

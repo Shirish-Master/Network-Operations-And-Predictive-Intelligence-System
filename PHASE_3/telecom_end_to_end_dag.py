@@ -89,6 +89,20 @@ with DAG(
         """
     )
 
+    generate_features_task = BashOperator(
+        task_id="generate_features",
+        bash_command="""
+        python /mnt/c/Users/Admin/Desktop/Shirish_1/PHASE_4/ml/features.py
+        """
+    )
+
+    score_network_task = BashOperator(
+        task_id="score_network",
+        bash_command="""
+        python /mnt/c/Users/Admin/Desktop/Shirish_1/PHASE_6/ML6.py
+        """
+    )
+
     quality_check_task = PythonOperator(
         task_id="quality_check",
         python_callable=quality_check,
@@ -107,6 +121,8 @@ with DAG(
         >> validate_task
         >> spark_process_task
         >> load_warehouse_task
+        >> generate_features_task
+        >> score_network_task
         >> quality_check_task
         >> notify_task
     )

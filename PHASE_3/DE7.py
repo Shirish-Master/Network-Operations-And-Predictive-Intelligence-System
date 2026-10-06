@@ -1,7 +1,10 @@
 
 from pathlib import Path
 import json
+import csv
 from datetime import datetime
+
+import pyarrow.parquet as pq
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -11,6 +14,21 @@ PROCESSED_FILE = BASE_DIR / "data" / "processed" / "hourly_summary.parquet"
 WAREHOUSE_DB = BASE_DIR / "data" / "analytics" / "warehouse.db"
 
 STATUS_FILE = BASE_DIR / "logs" / "pipeline_status.json"
+INGESTION_FILE = BASE_DIR / "logs" / "ingestion_metadata.csv"
+
+
+def _ingestion_counts() -> tuple[int, int]:
+    if not INGESTION_FILE.exists():
+        return 0, 0
+    rows_in = rows_rejected = 0
+    with INGESTION_FILE.open("r", encoding="utf-8", newline="") as file:
+        for row in csv.DictReader(file):
+            count = int(row.get("row_count") or 0)
+            if str(row.get("status", "")).upper() == "REJECTED":
+                rows_rejected += count
+            else:
+                rows_in += count
+    return rows_in, rows_rejected
 
 def write_pipeline_status(
     status,
@@ -48,14 +66,23 @@ def quality_check():
 
     # DE8 10.Confirm each failure is reflected in the pipeline status record from DE7 — the assistant will read this later.
 
+    run_timestamp = datetime.now().isoformat()
+    rows_in, rows_rejected = _ingestion_counts()
+    rows_published = pq.read_metadata(PROCESSED_FILE).num_rows if PROCESSED_FILE.exists() else 0
     status = {
     "pipeline": "telecom_ingestion",
-    "timestamp": datetime.now().isoformat(),
+    "run_id": f"telecom_ingestion-{run_timestamp}",
+    "timestamp": run_timestamp,
     "status": "SUCCESS",
     "failure_type": None,
     "action": "CONTINUE",
     "processed_exists": PROCESSED_FILE.exists(),
-    "warehouse_exists": WAREHOUSE_DB.exists()
+    "warehouse_exists": WAREHOUSE_DB.exists(),
+    "task_status": {"quality_check": "SUCCESS"},
+    "rows_in": rows_in,
+    "rows_rejected": rows_rejected,
+    "nulls_handled": 0,
+    "rows_published": rows_published,
     }
 
     if not PROCESSED_FILE.exists():
@@ -69,6 +96,8 @@ def quality_check():
         status["status"] = "FAILED"
         status["failure_type"] = "WAREHOUSE_LOAD_FAILURE"
         status["action"] = "FAIL"
+
+    status["task_status"]["quality_check"] = status["status"]
 
     STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
 

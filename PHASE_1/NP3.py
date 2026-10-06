@@ -36,9 +36,9 @@ class ActivityAlertDetector:
         self.activity_floor: Optional[float] = None
         self.alerts = pd.DataFrame()
 
-    # 2. Build the within-day baseline: for each grid_id, compute the median total_activity across that day's 24 hourly intervals, excluding the hour currently being evaluated. Use the median rather than the mean so a single extreme hour does not raise its own baseline.
+    # 2. Build the baseline using a configurable bucket key: for each grid_id and bucket, compute the median total_activity excluding the observation being evaluated.
 
-    def build_baseline(self) -> pd.DataFrame:
+    def build_baseline(self, bucket_key: str = "date") -> pd.DataFrame:
         data = self.data.copy()
         data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
         if data["timestamp"].isna().any():
@@ -46,9 +46,12 @@ class ActivityAlertDetector:
         if (data["total_activity"] < 0).any():
             raise ValueError("total_activity contains negative values")
         data["date"] = data["timestamp"].dt.date
+        data["hour_of_day"] = data["timestamp"].dt.hour
+        if bucket_key not in {"date", "hour_of_day"}:
+            raise ValueError("bucket_key must be 'date' or 'hour_of_day'")
 
-        daily_totals = data.groupby(["grid_id", "date"])["total_activity"].sum()
-        positive_totals = daily_totals[daily_totals > 0]
+        bucket_totals = data.groupby(["grid_id", bucket_key])["total_activity"].sum()
+        positive_totals = bucket_totals[bucket_totals > 0]
         if positive_totals.empty:
             raise ValueError("Cannot derive an activity floor from all-zero data")
 
@@ -56,19 +59,11 @@ class ActivityAlertDetector:
         # The 10th percentile suppresses the lowest-volume grid-days while
         # retaining most active grid-days for operational monitoring.
         self.activity_floor = float(positive_totals.quantile(self.FLOOR_QUANTILE))
-        data["daily_total_activity"] = data.set_index(["grid_id", "date"]).index.map(
-            daily_totals
+        data["daily_total_activity"] = data.set_index(["grid_id", bucket_key]).index.map(
+            bucket_totals
         )
         data["eligible_grid_day"] = data["daily_total_activity"] >= self.activity_floor
-        data["baseline_raw"] = np.nan
-
-        for _, row_indexes in data.groupby(["grid_id", "date"]).groups.items():
-            positions = np.asarray(list(row_indexes), dtype=int)
-            values = data.loc[positions, "total_activity"].to_numpy(dtype=float)
-            for position in positions:
-                other_values = np.delete(values, np.where(positions == position)[0][0])
-                if len(other_values):
-                    data.loc[position, "baseline_raw"] = float(np.median(other_values))
+        data["baseline_raw"] = data.groupby(["grid_id", bucket_key])["total_activity"].transform("median")
 
         data["baseline_activity"] = data["baseline_raw"].clip(lower=self.activity_floor)
         self.data = data

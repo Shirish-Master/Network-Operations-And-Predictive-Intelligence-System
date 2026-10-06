@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -211,6 +212,24 @@ def compare_file_sizes(output_dir: Path, analytics_dir: Path, dashboard_path: Pa
     }
 
 
+def flatten_stale_analytics_folder(analytics_dir: Path) -> None:
+    """Remove a stale nested analytics/analytics directory and keep a single canonical analytics root."""
+    nested_dir = analytics_dir / "analytics"
+    if not nested_dir.exists() or not nested_dir.is_dir():
+        return
+
+    for child in nested_dir.iterdir():
+        target = analytics_dir / child.name
+        if target.exists():
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        shutil.move(str(child), str(target))
+
+    nested_dir.rmdir()
+
+
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     phase2_dir = Path(__file__).resolve().parent
@@ -219,6 +238,9 @@ def main() -> None:
     analytics_dir = root / "data" / "analytics"
     reference_dir = root / "data" / "reference"
     geojson_path = reference_dir / "milano-grid.geojson"
+
+    analytics_dir.mkdir(parents=True, exist_ok=True)
+    flatten_stale_analytics_folder(analytics_dir)
 
     activity_df = read_landing_data(data_folder)
     hourly_summary = build_hourly_grid_summary(activity_df)

@@ -111,11 +111,21 @@ def load_dim_grid(conn):
         if cell_id is None:
             continue
 
+        geometry = feature.get("geometry") or {}
+        coordinate_rings = geometry.get("coordinates", [])
+        if geometry.get("type") == "Polygon":
+            ring = coordinate_rings[0] if coordinate_rings else []
+        elif geometry.get("type") == "MultiPolygon":
+            ring = coordinate_rings[0][0] if coordinate_rings and coordinate_rings[0] else []
+        else:
+            ring = []
+        longitudes = [point[0] for point in ring if len(point) >= 2]
+        latitudes = [point[1] for point in ring if len(point) >= 2]
         rows.append(
             {
                 "grid_id": int(cell_id),
-                "centroid_latitude": None,
-                "centroid_longitude": None,
+                "centroid_latitude": sum(latitudes) / len(latitudes) if latitudes else None,
+                "centroid_longitude": sum(longitudes) / len(longitudes) if longitudes else None,
                 "geometry_reference": "milano-grid.geojson",
             }
         )
